@@ -233,11 +233,13 @@ class NinjaGenerator {
         case '\'':
         case '"':
         case '`':
-          if (quote) {
-            if (quote == *in)
-              quote = 0;
-          } else if (!prev_backslash) {
-            quote = *in;
+          if (!prev_backslash) {
+            if (quote) {
+              if (quote == *in)
+                quote = 0;
+            } else {
+              quote = *in;
+            }
           }
           *cmd_buf += *in;
           break;
@@ -335,21 +337,16 @@ class NinjaGenerator {
     return true;
   }
 
-  bool GenShellScript(const vector<Command*>& commands,
+  bool GenShellScript(const char *name,
+                      const vector<Command*>& commands,
                       string* cmd_buf,
                       string* description) {
-    bool got_descritpion = false;
+    bool got_description = false;
     bool use_gomacc = false;
-    bool should_ignore_error = false;
     for (const Command* c : commands) {
       if (!cmd_buf->empty()) {
-        if (should_ignore_error) {
-          *cmd_buf += " ; ";
-        } else {
-          *cmd_buf += " && ";
-        }
+        *cmd_buf += " && ";
       }
-      should_ignore_error = c->ignore_error;
 
       const char* in = c->cmd.c_str();
       while (isspace(*in))
@@ -359,15 +356,23 @@ class NinjaGenerator {
       if (*in == '(') {
         needs_subshell = false;
       }
+      if (c->echo) {
+        needs_subshell = true;
+      }
 
       if (needs_subshell)
         *cmd_buf += '(';
 
+      if (c->echo) {
+        TranslateCommand(StringPrintf("echo -e \"%s\"", EchoEscape(in).c_str()).c_str(), cmd_buf);
+        *cmd_buf += "; ";
+      }
+
       size_t cmd_start = cmd_buf->size();
       StringPiece translated = TranslateCommand(in, cmd_buf);
-      if (g_detect_android_echo && !got_descritpion && !c->echo &&
+      if (g_detect_android_echo && !got_description && !c->echo &&
           GetDescriptionFromCommand(translated, description)) {
-        got_descritpion = true;
+        got_description = true;
         cmd_buf->resize(cmd_start);
         translated.clear();
       }
@@ -383,8 +388,8 @@ class NinjaGenerator {
         use_gomacc = true;
       }
 
-      if (c == commands.back() && c->ignore_error) {
-        *cmd_buf += " ; true";
+      if (c->ignore_error) {
+        *cmd_buf += StringPrintf(" || echo \"[%s] Error $$? (ignored)\"", name);
       }
 
       if (needs_subshell)
@@ -434,7 +439,7 @@ class NinjaGenerator {
 
       string description = "build $out";
       string cmd_buf;
-      use_local_pool |= GenShellScript(commands, &cmd_buf, &description);
+      use_local_pool |= GenShellScript(node->output.c_str(), commands, &cmd_buf, &description);
       fprintf(fp_, " description = %s\n", description.c_str());
       EmitDepfile(&cmd_buf);
 

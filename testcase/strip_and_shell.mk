@@ -1,3 +1,3 @@
 
 test:
-	echo $(strip $(shell pwd))
+	@echo $(strip $(shell pwd))

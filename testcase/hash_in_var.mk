@@ -7,4 +7,4 @@ test1: $(file)
 	echo PASS
 
 $(file):
-	touch $(file)
+	@touch $(file)

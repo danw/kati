@@ -442,6 +442,9 @@ string EchoEscape(const string str) {
       case '"':
         buf += "\\\"";
         break;
+      case '$':
+        buf += "\\$";
+        break;
       default:
         buf += *in;
     }

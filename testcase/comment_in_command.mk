@@ -17,11 +17,11 @@ make3:
 test3: $(shell echo foo #)
 
 test4:
-	echo $(shell echo OK # FAIL \
+	@echo $(shell echo OK # FAIL \
 	FAIL2)
 
 test5:
-	echo $(shell echo $$(echo PASS))
+	@echo $(shell echo $$(echo PASS))
 
 foo:
 	echo OK

@@ -1,3 +1,5 @@
+# TODO(ninja): test2 triggers the foo,bar rule in ninja, but not make
+
 files = $(wildcard *,*)
 
 # test expectes empty, since no *,* found.

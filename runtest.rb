@@ -90,7 +90,7 @@ end
 
 def normalize_ninja_log(log, mk)
   log.gsub!(/^\[\d+\/\d+\] .*\n/, '')
-  log.gsub!(/^ninja: no work to do\.\n/, '')
+  log.gsub!(/^ninja: no work to do\.\n/, "Nothing to be done\n")
   log.gsub!(/^ninja: error: (.*, needed by .*),.*/,
             '*** No rule to make target \\1.')
   if mk =~ /err_error_in_recipe.mk/
@@ -101,7 +101,7 @@ def normalize_ninja_log(log, mk)
   log
 end
 
-def normalize_make_log(expected, mk)
+def normalize_make_log(expected, mk, via_ninja)
   expected.gsub!(/^make(?:\[\d+\])?: (Entering|Leaving) directory.*\n/, '')
   expected.gsub!(/^make(?:\[\d+\])?: /, '')
   expected = move_circular_dep(expected)
@@ -123,6 +123,10 @@ def normalize_make_log(expected, mk)
     expected.gsub!(/Nothing to be done for "test"\.\n/, '')
   end
   expected.gsub!(/^\/bin\/sh: line 0: /, '')
+  # Ninja doesn't print out the target when there is nothing to be done
+  if via_ninja
+    expected.gsub!(/Nothing to be done for "[^"]*"\.\n/, "Nothing to be done\n")
+  end
 
   expected
 end
@@ -187,12 +191,9 @@ run_make_test = proc do |mk|
     cleanup
     testcases.each do |tc|
       cmd = 'make'
-      if via_ninja
-        cmd += ' -s'
-      end
       cmd += " #{tc} 2>&1"
       res = `#{cmd}`
-      res = normalize_make_log(res, mk)
+      res = normalize_make_log(res, mk, via_ninja)
       expected += "=== #{tc} ===\n" + res
       expected_files = get_output_filenames
       expected += "\n=== FILES ===\n#{expected_files * "\n"}\n"
@@ -277,9 +278,6 @@ run_shell_test = proc do |sh|
   run_in_testdir(sh) do |name|
     cleanup
     cmd = "sh ../../#{sh} make"
-    if is_ninja_test
-      cmd += ' -s'
-    end
     expected = IO.popen(cmd, 'r:binary', &:read)
     cleanup
 
@@ -299,7 +297,7 @@ run_shell_test = proc do |sh|
 
     output = IO.popen(cmd, 'r:binary', &:read)
 
-    expected = normalize_make_log(expected, sh)
+    expected = normalize_make_log(expected, sh, is_ninja_test)
     output = normalize_kati_log(output)
     if is_ninja_test
       output = normalize_ninja_log(output, sh)
