@@ -197,7 +197,7 @@ class NinjaGenerator {
     GenerateNinja(nodes, build_all_targets, orig_args);
     GenerateEnvlist();
     GenerateShell();
-    GenerateStamp();
+    GenerateStamp(orig_args);
   }
 
   static string GetStampFilename(const char* ninja_dir,
@@ -269,6 +269,10 @@ class NinjaGenerator {
       }
 
       prev_char = *in;
+    }
+
+    if (prev_backslash) {
+      cmd_buf->resize(cmd_buf->size()-1);
     }
 
     while (true) {
@@ -419,15 +423,6 @@ class NinjaGenerator {
       return;
     }
 
-    StringPiece base = Basename(node->output.str());
-    if (base != node->output.str()) {
-      auto p = short_names_.emplace(Intern(base), node->output);
-      if (!p.second) {
-        // We generate shortcuts only for targets whose basename are unique.
-        p.first->second = kEmptySym;
-      }
-    }
-
     vector<Command*> commands;
     ce_.Eval(node, &commands);
 
@@ -522,6 +517,9 @@ class NinjaGenerator {
             EscapeBuildTarget(node->output).c_str(),
             rule_name.c_str());
     vector<Symbol> order_onlys;
+    if (node->is_phony) {
+      fprintf(fp_, " _kati_always_build_");
+    }
     for (DepNode* d : node->deps) {
       fprintf(fp_, " %s", EscapeBuildTarget(d->output).c_str());
     }
@@ -605,6 +603,8 @@ class NinjaGenerator {
     fprintf(fp_, "pool local_pool\n");
     fprintf(fp_, " depth = %d\n\n", g_num_jobs);
 
+    fprintf(fp_, "build _kati_always_build_: phony\n\n");
+
     EmitRegenRules(orig_args);
 
     for (DepNode* node : nodes) {
@@ -620,12 +620,6 @@ class NinjaGenerator {
       CHECK(!nodes.empty());
       fprintf(fp_, "\ndefault %s\n",
               EscapeBuildTarget(nodes.front()->output).c_str());
-    }
-
-    fprintf(fp_, "\n# shortcuts:\n");
-    for (auto p : short_names_) {
-      if (!p.second.empty() && !done_.count(p.first))
-        fprintf(fp_, "build %s: phony %s\n", p.first.c_str(), p.second.c_str());
     }
 
     fclose(fp_);
@@ -723,7 +717,7 @@ class NinjaGenerator {
   }
 #endif
 
-  void GenerateStamp() {
+  void GenerateStamp(const string& orig_args) {
     FILE* fp = fopen(GetStampFilename().c_str(), "wb");
     CHECK(fp);
 
@@ -798,6 +792,8 @@ class NinjaGenerator {
       }
     }
 
+    DumpString(fp, orig_args);
+
     fclose(fp);
   }
 
@@ -809,7 +805,6 @@ class NinjaGenerator {
   string gomacc_;
   string ninja_suffix_;
   string ninja_dir_;
-  unordered_map<Symbol, Symbol> short_names_;
   string shell_;
   map<string, string> used_envs_;
   string kati_binary_;
@@ -836,7 +831,8 @@ bool NeedsRegen(const char* ninja_suffix,
                 const char* ninja_dir,
                 bool ignore_kati_binary,
                 bool dump_kati_stamp,
-                double start_time) {
+                double start_time,
+                const string& orig_args) {
   bool retval = false;
 #define RETURN_TRUE do {                         \
     if (dump_kati_stamp)                         \
@@ -1037,6 +1033,12 @@ bool NeedsRegen(const char* ninja_suffix,
         printf("shell %s: clean (rerun)\n", cmd.c_str());
       }
     }
+  }
+
+  LoadString(fp, &s);
+  if (orig_args != s) {
+    fprintf(stderr, "arguments changed, regenerating...\n");
+    RETURN_TRUE;
   }
 
   if (!retval) {
